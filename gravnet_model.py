@@ -139,7 +139,6 @@ class GravNetClustering(nn.Module):
         # 2 dense layers
         self.lin_1 = Linear(in_channels = f_out_dim*4, out_channels = 64)
         self.act = nn.LeakyReLU() # arguably more expressive than ReLU
-        # note: alternative idea could be to simply run k-NN on the new embedding space
         self.lin_2 = Linear(in_channels = 64, out_channels = 100)
         # self.softmax = nn.Softmax(dim = -1)
 
@@ -185,15 +184,6 @@ class GravNetClustering(nn.Module):
         # We return the embedding before the dense layers for visualization
         return x, embedding
 
-    # don't use this anymore.
-    def set_num_classes(self, k):
-        """
-        Method to dynamically adjust the number of classes (k) during training/testing.
-        This updates the output layer.
-        """
-        self.k = k
-        # Update the output layer to match the new number of classes
-        self.lin_2 = Linear(in_channels = 64, out_channels = self.k)
 
 
 
