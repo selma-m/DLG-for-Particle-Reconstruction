@@ -37,45 +37,6 @@ def map_to_integers(arr):
 
     return result
 
-def cluster(data, k, temp, num_iter, init = None, cluster_temp=5):
-    '''
-    pytorch (differentiable) implementation of soft k-means clustering.
-    '''
-    data = torch.diag(1./torch.norm(data, p=2, dim=1)) @ data
-    
-    mu = torch.rand(k, data.shape[1])
-    n = data.shape[0]
-    d = data.shape[1]
-    for t in range(num_iter):
-        dist = data @ mu.t()
-        # cluster responsibilities via softmax
-        r = torch.softmax(cluster_temp*dist, 1)
-        # total responsibility of each cluster
-        cluster_r = r.sum(dim=0)
-        # mean of points in each cluster weighted by responsibility
-        cluster_mean = (r.t().unsqueeze(1) @ data.expand(k, *data.shape)).squeeze(1)
-        # update cluster means
-        new_mu = torch.diag(1/cluster_r) @ cluster_mean
-        mu = new_mu
-    dist = data @ mu.t()
-    r = torch.softmax(cluster_temp*dist, 1)
-    return mu, r, dist
-
-def reduce_clusters(labels_pred_probs, n_clusters):
-    """
-    Reduce the predicted cluster probabilities to match the desired number of clusters
-    using K-means clustering.
-    
-    Args:
-    - labels_pred_probs: Predicted cluster probabilities (soft assignments) over more clusters.
-    - n_clusters: The target number of clusters (should match the true number of clusters).
-
-    Returns:
-    - reduced_probs: The re-clustered predicted probabilities.
-    """
-    result = cluster(labels_pred_probs, k = n_clusters, temp = 5.0, num_iter = 100)
-    
-    return result[1]
 
 # GravNet clustering architecture
 class GravNetClustering(nn.Module):
@@ -183,73 +144,6 @@ class GravNetClustering(nn.Module):
 
         # We return the embedding before the dense layers for visualization
         return x, embedding
-
-
-
-
-## Loss function: based on v-score
-
-def weighted_soft_v_measure(labels_true, labels_pred_probs, beta=1.0, labels_weight=None):
-    """
-    Differentiable version of the V-Measure loss function with label weights.
-    
-    Args:
-    - labels_true: Ground truth labels (true classes).
-    - labels_pred_probs: Predicted cluster probabilities (soft assignments).
-    - beta: Hyperparameter to balance homogeneity and completeness.
-    - labels_weight: weights are hits energies
-
-    Returns:
-    - loss: The negative V-Measure score (for minimization).
-    """
-    
-    # Ensure labels_weight is not None (set to 1 if None)
-    if labels_weight is None:
-        labels_weight = torch.ones_like(labels_true, dtype=torch.float)
-    else: 
-        labels_weight = torch.tensor(labels_weight, dtype=torch.float)
-
-    n_true_clusters = len(torch.unique(labels_true))
-    if n_true_clusters == 1:
-        reduced_pred_probs = torch.ones((labels_pred_probs.size(0), 1), requires_grad=True)
-    else: 
-        reduced_pred_probs = reduce_clusters(labels_pred_probs, n_clusters=n_true_clusters)
-    
-    
-    # Get the number of samples and clusters
-    n_samples = len(labels_true)
-    
-    # One-hot encode the true labels (labels_true)
-    one_hot_true = F.one_hot(labels_true, num_classes=n_true_clusters).float()
-    
-    # Calculate the soft contingency matrix (weighted)
-    contingency = torch.matmul(one_hot_true.T, reduced_pred_probs * labels_weight.view(-1, 1))
-    
-    # Compute weighted entropy for true labels (C_hat)
-    entropy_C_hat = -torch.sum(contingency * torch.log(contingency.sum(dim=1, keepdim=True) + 1e-8), dim=1).mean()
-    
-    # Compute weighted entropy for predicted labels (K_hat)
-    entropy_K_hat = -torch.sum(contingency * torch.log(contingency.sum(dim=0, keepdim=True) + 1e-8), dim=0).mean()
-
-    # Compute Mutual Information (MI) with labels weight
-    MI_hat = torch.sum(contingency * torch.log((contingency + 1e-8) / 
-                                                (contingency.sum(dim=0, keepdim=True) + 1e-8) / 
-                                                (contingency.sum(dim=1, keepdim=True) + 1e-8) + 1e-8), dim=(0, 1)).mean()
-
-    # Compute homogeneity and completeness
-    homogeneity_hat = MI_hat / (entropy_C_hat) if entropy_C_hat else 1.0
-    completeness_hat = MI_hat / (entropy_K_hat) if entropy_K_hat else 1.0
-
-    # Compute V-Measure score
-    if homogeneity_hat + completeness_hat == 0.0:
-        v_measure_score_hat = 0.0
-    else:
-        v_measure_score_hat = (1 + beta) * homogeneity_hat * completeness_hat / (beta * homogeneity_hat + completeness_hat)
-
-    # The loss is the negative of the V-Measure to minimize it
-    loss = -v_measure_score_hat
-    
-    return loss
 
 
 ## Performance metrics
